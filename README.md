@@ -4,14 +4,16 @@ Self-hosted Firecrawl/Prometheus-style starter: scrape pages into clean Markdown
 
 No hosted Firecrawl API key required.
 
-## What v0.2 does
+## What v0.3 does
 
-- `/api/scrape` — single page to Markdown/text/links/metadata.
-- `/api/crawl` — same-site crawling with page limit, max depth, include/exclude regex filters, and Markdown output.
+- `/api/scrape` — single page to Markdown/text/links/metadata, with retries and optional JavaScript rendering.
+- `/api/crawl` — same-site crawling with page limit, max depth, include/exclude regex filters, robots.txt checks, sitemap seeding, retries, and Markdown output.
+- `/api/export` — crawl output as JSON, JSONL, or CSV.
 - `/api/index` — crawl + local embeddings via Ollama + deterministic UUIDv5 point IDs in Qdrant.
 - `/api/chat` — RAG chat over indexed website chunks.
 - `/api/extract` — Prometheus-style plain-English extraction into JSON using the local chat model.
-- `/api/jobs` — simple background crawl/index job wrapper.
+- `/api/jobs` — persistent background crawl/index/extract jobs saved in `data/jobs.json`.
+- Optional Playwright Chromium rendering when `ENABLE_JS_RENDERING=true`.
 - Mobile-friendly UI at `/`.
 
 ## Quick start
@@ -121,14 +123,35 @@ If Ollama and Qdrant are already running separately:
 
 ## Known limits versus Firecrawl quality
 
+Covered in v0.3: sitemap discovery, robots.txt handling, retries, persistent job state, CSV/JSONL exports, and optional Playwright rendering.
+
+
 This is now a serious local foundation, but Firecrawl-level production crawling still needs more work:
 
-- JavaScript rendering via Playwright/Crawlee or Browserless.
-- Robots.txt/sitemap policy controls.
-- Queue persistence with Redis/Postgres instead of in-memory jobs.
+- Distributed queues with Redis/Postgres for very large crawls.
 - Proxy rotation and anti-bot handling for difficult public sites.
 - Better LLM extraction validation/retries.
 - Authenticated crawling/session capture.
 - Exports to CSV/JSONL and webhooks.
 
 The design keeps those optional so the base stack stays cheap and self-hosted.
+
+
+## Export examples
+
+CSV export:
+
+```bash
+curl -X POST http://localhost:8000/api/export \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","format":"csv","limit":5}' \
+  -o crawl.csv
+```
+
+JavaScript-rendered scrape:
+
+```bash
+curl -X POST http://localhost:8000/api/scrape \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","render_js":true}'
+```

@@ -10,7 +10,9 @@ services:
       DEFAULT_CHAT_MODEL: llama3.1:8b
       DEFAULT_EMBED_MODEL: nomic-embed-text
       COLLECTION_NAME: firestarter_chunks
-      MAX_PAGES: 40
+      MAX_PAGES: 120
+      ENABLE_JS_RENDERING: "true"
+      DATA_DIR: /app/data
     depends_on:
       - qdrant
       - ollama

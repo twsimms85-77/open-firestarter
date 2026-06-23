@@ -27,3 +27,11 @@ import json
 payload=json.load(open('/tmp/open-firestarter-crawl.json'))
 print({"site_id": payload.get("site_id"), "pages_crawled": payload.get("pages_crawled")})
 PY
+
+
+printf "\nChecking export endpoint...\n"
+curl -fsS -X POST "$BASE_URL/api/export" \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","format":"csv","limit":1,"max_depth":0}' \
+  -o /tmp/open-firestarter-export.csv
+head -3 /tmp/open-firestarter-export.csv

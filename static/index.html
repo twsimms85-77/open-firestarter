@@ -35,9 +35,9 @@
 <main>
   <section class="hero">
     <h1>🔥 Open Firestarter</h1>
-    <p>Self-hosted Firecrawl-style scraping, crawling, extraction, RAG indexing, and website chat with Ollama + Qdrant.</p>
+    <p>Self-hosted Firecrawl-style scraping, crawling, exports, extraction, RAG indexing, website chat, robots/sitemaps, retries, persistent jobs, and optional JS rendering.</p>
     <div class="pills">
-      <span class="pill">/api/scrape</span><span class="pill">/api/crawl</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span>
+      <span class="pill">/api/scrape</span><span class="pill">/api/crawl</span><span class="pill">/api/export</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span><span class="pill">/api/jobs</span>
     </div>
   </section>
 
@@ -51,6 +51,7 @@
       <p class="muted">Firecrawl-style page-to-markdown.</p>
       <label>URL</label>
       <input id="scrapeUrl" placeholder="https://example.com" />
+      <label><input id="scrapeJs" type="checkbox" style="width:auto;margin-right:8px" /> Render JavaScript</label>
       <button id="scrapeBtn">Scrape markdown</button>
       <div id="scrapeResult" class="bubble">Markdown result appears here.</div>
     </section>
@@ -67,7 +68,11 @@
       </div>
       <label>Exclude regex</label>
       <input id="exclude" placeholder="/login|/cart|#" />
+      <label><input id="crawlJs" type="checkbox" style="width:auto;margin-right:8px" /> Render JavaScript</label>
+      <label><input id="respectRobots" type="checkbox" checked style="width:auto;margin-right:8px" /> Respect robots.txt</label>
+      <label><input id="useSitemap" type="checkbox" checked style="width:auto;margin-right:8px" /> Seed from sitemap.xml</label>
       <button id="crawlBtn">Crawl</button>
+      <button id="exportBtn" class="secondary">Export CSV</button>
       <div id="crawlResult" class="bubble">Crawl result appears here.</div>
     </section>
 
@@ -113,11 +118,12 @@ async function postJson(url, body) {
 async function checkHealth() {
   try {
     const h = await getJson('/api/health');
-    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · v${h.version}`;
+    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · JS rendering: ${h.js_rendering_enabled ? 'on':'off'} · jobs: ${h.persistent_jobs ? 'persistent':'memory'} · v${h.version}`;
   } catch(e) { $('health').textContent = 'Health failed: ' + e.message; }
 }
-$('scrapeBtn').onclick = async () => { $('scrapeBtn').disabled=true; $('scrapeResult').textContent='Scraping…'; try { const d=await postJson('/api/scrape',{url:$('scrapeUrl').value}); $('scrapeResult').textContent=d.markdown; } catch(e){ $('scrapeResult').textContent='Error: '+e.message; } $('scrapeBtn').disabled=false; };
-$('crawlBtn').onclick = async () => { $('crawlBtn').disabled=true; $('crawlResult').textContent='Crawling…'; try { const d=await postJson('/api/crawl',{url:$('crawlUrl').value,limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value)}); $('crawlResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('crawlBtn').disabled=false; };
+$('scrapeBtn').onclick = async () => { $('scrapeBtn').disabled=true; $('scrapeResult').textContent='Scraping…'; try { const d=await postJson('/api/scrape',{url:$('scrapeUrl').value,render_js:$('scrapeJs').checked}); $('scrapeResult').textContent=d.markdown; } catch(e){ $('scrapeResult').textContent='Error: '+e.message; } $('scrapeBtn').disabled=false; };
+$('crawlBtn').onclick = async () => { $('crawlBtn').disabled=true; $('crawlResult').textContent='Crawling…'; try { const d=await postJson('/api/crawl',{url:$('crawlUrl').value,limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value),render_js:$('crawlJs').checked,respect_robots:$('respectRobots').checked,use_sitemap:$('useSitemap').checked}); $('crawlResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('crawlBtn').disabled=false; };
+$('exportBtn').onclick = async () => { $('exportBtn').disabled=true; $('crawlResult').textContent='Exporting CSV…'; try { const r=await fetch('/api/export',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:$('crawlUrl').value,format:'csv',limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value),render_js:$('crawlJs').checked,respect_robots:$('respectRobots').checked,use_sitemap:$('useSitemap').checked})}); const text=await r.text(); if(!r.ok) throw new Error(text); $('crawlResult').textContent=text; } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('exportBtn').disabled=false; };
 $('indexBtn').onclick = async () => { $('indexBtn').disabled=true; $('indexResult').textContent='Crawling + embedding locally… first run can be slow.'; try { const d=await postJson('/api/index',{url:$('indexUrl').value,limit:10,max_depth:2}); $('siteId').value=d.site_id; $('indexResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('indexResult').textContent='Error: '+e.message; } $('indexBtn').disabled=false; };
 $('chatBtn').onclick = async () => { $('chatBtn').disabled=true; $('answer').textContent='Thinking…'; try { const d=await postJson('/api/chat',{site_id:$('siteId').value,question:$('question').value}); $('answer').textContent=d.answer+'\n\nSources:\n'+d.sources.map(s=>`- ${s.title || 'Untitled'} (${s.url}) score=${s.score}`).join('\n'); } catch(e){ $('answer').textContent='Error: '+e.message; } $('chatBtn').disabled=false; };
 $('extractBtn').onclick = async () => { $('extractBtn').disabled=true; $('extractResult').textContent='Extracting JSON with local model…'; try { const d=await postJson('/api/extract',{url:$('extractUrl').value,instruction:$('instruction').value,limit:5,max_depth:1}); $('extractResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('extractResult').textContent='Error: '+e.message; } $('extractBtn').disabled=false; };
