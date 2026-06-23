@@ -39,7 +39,7 @@ JOBS_PATH = DATA_DIR / "jobs.json"
 ENABLE_JS_RENDERING = os.getenv("ENABLE_JS_RENDERING", "false").lower() in {"1", "true", "yes"}
 DATA_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="Open Firestarter", version="0.3.0")
+app = FastAPI(title="Open Firestarter", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -101,6 +101,26 @@ class ExtractRequest(BaseModel):
     render_js: bool = False
     respect_robots: bool = True
     use_sitemap: bool = True
+
+
+class MapRequest(BaseModel):
+    url: str
+    limit: int = Field(default=100, ge=1, le=1000)
+    include_patterns: list[str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
+    allow_external: bool = False
+    respect_robots: bool = True
+    use_sitemap: bool = True
+
+
+class BatchScrapeRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1, max_length=100)
+    include_html: bool = False
+    only_main_content: bool = True
+    render_js: bool = False
+    wait_after_load_ms: int = Field(default=750, ge=0, le=10000)
+    timeout_seconds: int = Field(default=35, ge=5, le=180)
+    max_retries: int = Field(default=2, ge=0, le=5)
 
 
 class ExportRequest(BaseModel):
@@ -441,6 +461,52 @@ async def fetch_page(
             await asyncio.sleep(min(2**attempt * 0.3, 4.0))
     return None
 
+async def map_site(req: MapRequest) -> dict[str, Any]:
+    root_url = normalize_url(req.url)
+    if not root_url:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    urls: list[str] = []
+    seen: set[str] = {root_url}
+    queue: deque[str] = deque([root_url])
+    skipped: list[dict[str, str]] = []
+    headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,application/xml"}
+    async with httpx.AsyncClient(timeout=25, headers=headers) as client:
+        if req.use_sitemap:
+            for loc in await discover_sitemap_urls(client, root_url, req.limit, req.include_patterns, req.exclude_patterns):
+                if loc not in seen:
+                    seen.add(loc)
+                    urls.append(loc)
+                if len(urls) >= req.limit:
+                    return {"root_url": root_url, "urls": urls[:req.limit], "count": len(urls[:req.limit]), "skipped": skipped}
+        while queue and len(urls) < req.limit:
+            url = queue.popleft()
+            if not req.allow_external and not same_site(url, root_url):
+                skipped.append({"url": url, "reason": "external"})
+                continue
+            if not pattern_allowed(url, req.include_patterns, req.exclude_patterns):
+                skipped.append({"url": url, "reason": "pattern"})
+                continue
+            if req.respect_robots and not await robots_allowed(client, url):
+                skipped.append({"url": url, "reason": "robots_txt"})
+                continue
+            urls.append(url)
+            try:
+                response = await client.get(url, follow_redirects=True, timeout=25)
+                if response.status_code >= 400 or "text/html" not in response.headers.get("content-type", ""):
+                    continue
+                soup = BeautifulSoup(response.text, "html.parser")
+                for a in soup.select("a[href]"):
+                    href = normalize_url(a.get("href", ""), base=str(response.url))
+                    if href and href not in seen:
+                        seen.add(href)
+                        queue.append(href)
+            except Exception:
+                continue
+            if CRAWL_DELAY_SECONDS > 0:
+                await asyncio.sleep(CRAWL_DELAY_SECONDS)
+    return {"root_url": root_url, "urls": urls[:req.limit], "count": len(urls[:req.limit]), "skipped": skipped[:100]}
+
+
 async def crawl_pages(req: CrawlRequest) -> dict[str, Any]:
     root_url = normalize_url(req.url)
     if not root_url:
@@ -609,7 +675,7 @@ async def health() -> dict[str, Any]:
         "models_available": models_available,
         "js_rendering_enabled": ENABLE_JS_RENDERING,
         "persistent_jobs": True,
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
@@ -635,6 +701,32 @@ async def scrape(req: ScrapeRequest) -> dict[str, Any]:
                 html_response = await client.get(url, follow_redirects=True)
                 data["html"] = html_response.text
     return data
+
+@app.post("/api/map")
+async def map_endpoint(req: MapRequest) -> dict[str, Any]:
+    return await map_site(req)
+
+
+@app.post("/api/batch/scrape")
+async def batch_scrape(req: BatchScrapeRequest) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=req.timeout_seconds, headers={"User-Agent": USER_AGENT}) as client:
+        for raw_url in req.urls:
+            url = normalize_url(raw_url)
+            if not url:
+                results.append({"url": raw_url, "success": False, "error": "Invalid URL"})
+                continue
+            try:
+                page = await fetch_page(client, url, only_main_content=req.only_main_content, render_js=req.render_js, wait_after_load_ms=req.wait_after_load_ms, timeout_seconds=req.timeout_seconds, max_retries=req.max_retries)
+                if not page:
+                    results.append({"url": url, "success": False, "error": "No readable HTML"})
+                    continue
+                item = {"url": page.url, "success": True, "title": page.title, "description": page.description, "markdown": page.markdown, "text": page.text, "links": page.links, "elapsed_ms": page.elapsed_ms, "rendered": page.rendered}
+                results.append(item)
+            except Exception as exc:
+                results.append({"url": url, "success": False, "error": str(exc)})
+    return {"results": results, "total": len(results), "succeeded": sum(1 for r in results if r.get("success"))}
+
 
 @app.post("/api/crawl")
 async def crawl(req: CrawlRequest) -> dict[str, Any]:

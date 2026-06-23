@@ -37,7 +37,7 @@
     <h1>🔥 Open Firestarter</h1>
     <p>Self-hosted Firecrawl-style scraping, crawling, exports, extraction, RAG indexing, website chat, robots/sitemaps, retries, persistent jobs, and optional JS rendering.</p>
     <div class="pills">
-      <span class="pill">/api/scrape</span><span class="pill">/api/crawl</span><span class="pill">/api/export</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span><span class="pill">/api/jobs</span>
+      <span class="pill">/api/scrape</span><span class="pill">/api/batch/scrape</span><span class="pill">/api/map</span><span class="pill">/api/crawl</span><span class="pill">/api/export</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span><span class="pill">/api/jobs</span>
     </div>
   </section>
 
@@ -118,7 +118,7 @@ async function postJson(url, body) {
 async function checkHealth() {
   try {
     const h = await getJson('/api/health');
-    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · JS rendering: ${h.js_rendering_enabled ? 'on':'off'} · jobs: ${h.persistent_jobs ? 'persistent':'memory'} · v${h.version}`;
+    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · JS rendering: ${h.js_rendering_enabled ? 'on':'off'} · jobs: ${h.persistent_jobs ? 'persistent':'memory'} · map/batch ready · v${h.version}`;
   } catch(e) { $('health').textContent = 'Health failed: ' + e.message; }
 }
 $('scrapeBtn').onclick = async () => { $('scrapeBtn').disabled=true; $('scrapeResult').textContent='Scraping…'; try { const d=await postJson('/api/scrape',{url:$('scrapeUrl').value,render_js:$('scrapeJs').checked}); $('scrapeResult').textContent=d.markdown; } catch(e){ $('scrapeResult').textContent='Error: '+e.message; } $('scrapeBtn').disabled=false; };
