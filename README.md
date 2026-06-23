@@ -1,18 +1,28 @@
 # Open Firestarter
 
-Self-hosted Firestarter-style starter: crawl a website, extract clean text, embed it locally with Ollama, store vectors in Qdrant, and chat with the indexed site.
+Self-hosted Firecrawl/Prometheus-style starter: scrape pages into clean Markdown, crawl sites, extract structured data, index website chunks into Qdrant, and chat with indexed sites using local Ollama models.
 
 No hosted Firecrawl API key required.
 
-## Fastest start
+## What v0.2 does
+
+- `/api/scrape` — single page to Markdown/text/links/metadata.
+- `/api/crawl` — same-site crawling with page limit, max depth, include/exclude regex filters, and Markdown output.
+- `/api/index` — crawl + local embeddings via Ollama + deterministic UUIDv5 point IDs in Qdrant.
+- `/api/chat` — RAG chat over indexed website chunks.
+- `/api/extract` — Prometheus-style plain-English extraction into JSON using the local chat model.
+- `/api/jobs` — simple background crawl/index job wrapper.
+- Mobile-friendly UI at `/`.
+
+## Quick start
 
 ```bash
-tar -xzf open-firestarter.tar.gz
+git clone https://github.com/twsimms85-77/open-firestarter.git
 cd open-firestarter
 ./scripts/start.sh
 ```
 
-Then open:
+Open:
 
 ```txt
 http://localhost:8000
@@ -23,7 +33,7 @@ The first model pull can take a while. It downloads:
 - `nomic-embed-text` for embeddings
 - `llama3.1:8b` for chat
 
-## If your computer has less RAM
+## Lower-RAM option
 
 Use Qwen 3B instead of Llama 8B:
 
@@ -43,40 +53,46 @@ Restart:
 docker compose up -d
 ```
 
-## What it runs
-
-- FastAPI backend and web UI
-- Ollama local models
-- Qdrant vector database
-- Trafilatura and BeautifulSoup crawler
-- Local embeddings through Ollama
-- Local chat through Ollama
-
-## Check it
+## Health check
 
 ```bash
-./scripts/check.sh
 curl http://localhost:8000/api/health
 ```
 
-Expected health response should show `ollama_ok: true` after Docker is up and Ollama is running.
+Expected when fully running:
 
-## Use it
+```json
+{
+  "ok": true,
+  "ollama_ok": true,
+  "qdrant_ok": true
+}
+```
 
-1. Open `http://localhost:8000`.
-2. Enter a URL like `https://example.com`.
-3. Keep page limit low first, like `5` or `10`.
-4. Click Index site.
-5. Ask questions with the generated `site_id`.
+## API examples
 
-## API
+Scrape one page:
 
-Index:
+```bash
+curl -X POST http://localhost:8000/api/scrape \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com"}'
+```
+
+Crawl a site:
+
+```bash
+curl -X POST http://localhost:8000/api/crawl \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","limit":5,"max_depth":2}'
+```
+
+Index a site:
 
 ```bash
 curl -X POST http://localhost:8000/api/index \
   -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","limit":5}'
+  -d '{"url":"https://example.com","limit":5,"max_depth":2}'
 ```
 
 Chat:
@@ -87,16 +103,32 @@ curl -X POST http://localhost:8000/api/chat \
   -d '{"site_id":"example-com-abc12345","question":"What does this site do?"}'
 ```
 
+Extract structured JSON:
+
+```bash
+curl -X POST http://localhost:8000/api/extract \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","instruction":"Extract the organization name, summary, links, and source_url."}'
+```
+
 ## Dev mode without Docker for the app
 
-If you already have Ollama and Qdrant running separately:
+If Ollama and Qdrant are already running separately:
 
 ```bash
 ./scripts/dev-no-docker.sh
 ```
 
-## Known limits
+## Known limits versus Firecrawl quality
 
-This is the lean working version. JavaScript-heavy sites may need Playwright/Crawlee next. Captchas, bot blocks, and rate limits still exist with self-hosted crawling.
+This is now a serious local foundation, but Firecrawl-level production crawling still needs more work:
 
-Next upgrade is Prometheus-style collector mode: describe the data you want, generate a plan, crawl, extract structured JSON/CSV.
+- JavaScript rendering via Playwright/Crawlee or Browserless.
+- Robots.txt/sitemap policy controls.
+- Queue persistence with Redis/Postgres instead of in-memory jobs.
+- Proxy rotation and anti-bot handling for difficult public sites.
+- Better LLM extraction validation/retries.
+- Authenticated crawling/session capture.
+- Exports to CSV/JSONL and webhooks.
+
+The design keeps those optional so the base stack stays cheap and self-hosted.

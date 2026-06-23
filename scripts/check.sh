@@ -1,24 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
+BASE_URL="${BASE_URL:-http://localhost:8000}"
 
-cd "$(dirname "$0")/.."
+echo "Checking health..."
+curl -fsS "$BASE_URL/api/health" -o /tmp/open-firestarter-health.json
+python -m json.tool /tmp/open-firestarter-health.json
 
-echo "Checking Python syntax..."
-python -m py_compile app/main.py
+printf "\nChecking scrape endpoint...\n"
+curl -fsS -X POST "$BASE_URL/api/scrape" \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com"}' \
+  -o /tmp/open-firestarter-scrape.json
+python - <<'PY'
+import json
+payload=json.load(open('/tmp/open-firestarter-scrape.json'))
+print({"url": payload.get("url"), "title": payload.get("title"), "markdown_chars": len(payload.get("markdown", "")), "links": len(payload.get("links", []))})
+PY
 
-echo "Checking required files..."
-test -f docker-compose.yml
-test -f Dockerfile
-test -f requirements.txt
-test -f app/main.py
-test -f static/index.html
-
-echo "Checking Docker Compose config if Docker is available..."
-if command -v docker >/dev/null 2>&1; then
-  docker compose config >/dev/null
-  echo "Docker Compose config OK"
-else
-  echo "Docker not installed here; skipping compose validation"
-fi
-
-echo "OK"
+printf "\nChecking crawl endpoint...\n"
+curl -fsS -X POST "$BASE_URL/api/crawl" \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","limit":1,"max_depth":0}' \
+  -o /tmp/open-firestarter-crawl.json
+python - <<'PY'
+import json
+payload=json.load(open('/tmp/open-firestarter-crawl.json'))
+print({"site_id": payload.get("site_id"), "pages_crawled": payload.get("pages_crawled")})
+PY

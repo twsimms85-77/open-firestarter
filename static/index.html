@@ -7,90 +7,120 @@
   <style>
     :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif; }
     body { margin: 0; background: #0a0b0f; color: #f5f7fb; }
-    main { max-width: 980px; margin: 0 auto; padding: 42px 20px; }
-    .card { background: #12141c; border: 1px solid #252a38; border-radius: 18px; padding: 22px; margin: 18px 0; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-    h1 { font-size: 44px; margin: 0 0 8px; letter-spacing: -0.04em; }
-    p { color: #aeb6c8; line-height: 1.5; }
-    input, textarea, button { width: 100%; box-sizing: border-box; border-radius: 12px; border: 1px solid #303648; background: #080a10; color: #fff; padding: 13px 14px; font: inherit; }
-    textarea { min-height: 92px; resize: vertical; }
-    button { cursor: pointer; background: #ff5a1f; border: none; font-weight: 700; margin-top: 10px; }
+    main { max-width: 1120px; margin: 0 auto; padding: 34px 18px 70px; }
+    .hero { display: grid; gap: 8px; margin-bottom: 18px; }
+    h1 { font-size: clamp(34px, 7vw, 62px); margin: 0; letter-spacing: -0.06em; line-height: .95; }
+    h2 { margin: 0 0 12px; }
+    p { color: #aeb6c8; line-height: 1.55; margin: 0; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: #12141c; border: 1px solid #252a38; border-radius: 18px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+    .full { grid-column: 1 / -1; }
+    input, textarea, select, button { width: 100%; box-sizing: border-box; border-radius: 12px; border: 1px solid #303648; background: #080a10; color: #fff; padding: 12px 13px; font: inherit; }
+    textarea { min-height: 110px; resize: vertical; }
+    button { cursor: pointer; background: #ff5a1f; border: none; font-weight: 800; margin-top: 10px; }
+    button.secondary { background: #202535; }
     button:disabled { opacity: .55; cursor: wait; }
     label { display: block; color: #cbd3e4; margin: 12px 0 7px; font-size: 14px; }
-    .row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; align-items: end; }
-    .bubble { white-space: pre-wrap; background: #090b12; border: 1px solid #252a38; border-radius: 14px; padding: 14px; margin-top: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 120px 120px; gap: 10px; align-items: end; }
+    .bubble { white-space: pre-wrap; overflow:auto; max-height: 360px; background: #090b12; border: 1px solid #252a38; border-radius: 14px; padding: 13px; margin-top: 12px; color: #cbd3e4; font-size: 13px; }
     .muted { color: #8791a5; font-size: 13px; }
     .ok { color: #7cf7a1; }
     .bad { color: #ff8f8f; }
-    a { color: #ffb088; }
+    .pill { display: inline-flex; gap: 6px; align-items: center; padding: 7px 10px; border-radius: 999px; background: #151926; border: 1px solid #252a38; color: #aeb6c8; font-size: 13px; }
+    .pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    @media (max-width: 760px) { .grid, .row { grid-template-columns: 1fr; } main { padding: 22px 12px 48px; } }
   </style>
 </head>
 <body>
 <main>
-  <h1>🔥 Open Firestarter</h1>
-  <p>Self-hosted website-to-chatbot starter using Ollama, Qdrant, and local crawling. No Firecrawl API key required.</p>
+  <section class="hero">
+    <h1>🔥 Open Firestarter</h1>
+    <p>Self-hosted Firecrawl-style scraping, crawling, extraction, RAG indexing, and website chat with Ollama + Qdrant.</p>
+    <div class="pills">
+      <span class="pill">/api/scrape</span><span class="pill">/api/crawl</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span>
+    </div>
+  </section>
 
-  <section class="card">
+  <section class="card full">
     <div id="health" class="muted">Checking local services…</div>
   </section>
 
-  <section class="card">
-    <h2>1. Index a website</h2>
-    <label>Website URL</label>
-    <input id="url" placeholder="https://example.com" />
-    <div class="row">
-      <div>
-        <label>Page limit</label>
-        <input id="limit" type="number" min="1" max="40" value="10" />
-      </div>
-      <button id="indexBtn">Index site</button>
-    </div>
-    <div id="indexResult" class="bubble muted">Your site_id will appear here.</div>
-  </section>
+  <div class="grid">
+    <section class="card">
+      <h2>1. Scrape a page</h2>
+      <p class="muted">Firecrawl-style page-to-markdown.</p>
+      <label>URL</label>
+      <input id="scrapeUrl" placeholder="https://example.com" />
+      <button id="scrapeBtn">Scrape markdown</button>
+      <div id="scrapeResult" class="bubble">Markdown result appears here.</div>
+    </section>
 
-  <section class="card">
-    <h2>2. Chat with the indexed site</h2>
-    <label>site_id</label>
-    <input id="siteId" placeholder="Paste site_id from indexing result" />
-    <label>Question</label>
-    <textarea id="question" placeholder="What does this site say about pricing?"></textarea>
-    <button id="chatBtn">Ask</button>
-    <div id="answer" class="bubble muted">Answer will appear here.</div>
-  </section>
+    <section class="card">
+      <h2>2. Crawl a site</h2>
+      <p class="muted">Follow links, filter URLs, return page markdown.</p>
+      <label>Root URL</label>
+      <input id="crawlUrl" placeholder="https://example.com" />
+      <div class="row">
+        <div><label>Include regex</label><input id="include" placeholder="/docs|/blog" /></div>
+        <div><label>Pages</label><input id="limit" type="number" min="1" max="80" value="10" /></div>
+        <div><label>Depth</label><input id="depth" type="number" min="0" max="8" value="2" /></div>
+      </div>
+      <label>Exclude regex</label>
+      <input id="exclude" placeholder="/login|/cart|#" />
+      <button id="crawlBtn">Crawl</button>
+      <div id="crawlResult" class="bubble">Crawl result appears here.</div>
+    </section>
+
+    <section class="card">
+      <h2>3. Index + chat</h2>
+      <p class="muted">Embed chunks locally, store in Qdrant, ask questions.</p>
+      <label>Website URL</label>
+      <input id="indexUrl" placeholder="https://example.com" />
+      <button id="indexBtn">Index site</button>
+      <div id="indexResult" class="bubble">site_id appears here.</div>
+      <label>site_id</label>
+      <input id="siteId" placeholder="example-com-abc12345" />
+      <label>Question</label>
+      <textarea id="question" placeholder="What does this site say about pricing?"></textarea>
+      <button id="chatBtn">Ask</button>
+      <div id="answer" class="bubble">Answer appears here.</div>
+    </section>
+
+    <section class="card">
+      <h2>4. Extract structured data</h2>
+      <p class="muted">Prometheus-style: say what data you want; local LLM returns JSON.</p>
+      <label>URL</label>
+      <input id="extractUrl" placeholder="https://example.com" />
+      <label>Instruction</label>
+      <textarea id="instruction" placeholder="Extract company name, services, pricing, contact email, phone, and source_url."></textarea>
+      <button id="extractBtn">Extract JSON</button>
+      <div id="extractResult" class="bubble">JSON result appears here.</div>
+    </section>
+  </div>
 </main>
 <script>
-const $ = (id) => document.getElementById(id);
-async function jsonFetch(url, body) {
-  const r = await fetch(url, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
+const $ = id => document.getElementById(id);
+function lines(v) { return v ? v.split(',').map(s => s.trim()).filter(Boolean) : []; }
+async function getJson(url, opts={}) {
+  const r = await fetch(url, opts);
   const data = await r.json();
   if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
   return data;
 }
+async function postJson(url, body) {
+  return getJson(url, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+}
 async function checkHealth() {
   try {
-    const r = await fetch('/api/health');
-    const h = await r.json();
-    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · chat model: ${h.chat_model} · embed model: ${h.embed_model}`;
-  } catch (e) { $('health').textContent = 'Health check failed: ' + e.message; }
+    const h = await getJson('/api/health');
+    $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · v${h.version}`;
+  } catch(e) { $('health').textContent = 'Health failed: ' + e.message; }
 }
-$('indexBtn').onclick = async () => {
-  $('indexBtn').disabled = true;
-  $('indexResult').textContent = 'Crawling, extracting text, embedding locally… first run can be slow.';
-  try {
-    const data = await jsonFetch('/api/index', { url: $('url').value, limit: Number($('limit').value || 10) });
-    $('siteId').value = data.site_id;
-    $('indexResult').textContent = JSON.stringify(data, null, 2);
-  } catch(e) { $('indexResult').textContent = 'Error: ' + e.message; }
-  $('indexBtn').disabled = false;
-};
-$('chatBtn').onclick = async () => {
-  $('chatBtn').disabled = true;
-  $('answer').textContent = 'Thinking with local model…';
-  try {
-    const data = await jsonFetch('/api/chat', { site_id: $('siteId').value, question: $('question').value });
-    $('answer').textContent = data.answer + '\n\nSources:\n' + data.sources.map(s => `- ${s.title} (${s.url})`).join('\n');
-  } catch(e) { $('answer').textContent = 'Error: ' + e.message; }
-  $('chatBtn').disabled = false;
-};
+$('scrapeBtn').onclick = async () => { $('scrapeBtn').disabled=true; $('scrapeResult').textContent='Scraping…'; try { const d=await postJson('/api/scrape',{url:$('scrapeUrl').value}); $('scrapeResult').textContent=d.markdown; } catch(e){ $('scrapeResult').textContent='Error: '+e.message; } $('scrapeBtn').disabled=false; };
+$('crawlBtn').onclick = async () => { $('crawlBtn').disabled=true; $('crawlResult').textContent='Crawling…'; try { const d=await postJson('/api/crawl',{url:$('crawlUrl').value,limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value)}); $('crawlResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('crawlBtn').disabled=false; };
+$('indexBtn').onclick = async () => { $('indexBtn').disabled=true; $('indexResult').textContent='Crawling + embedding locally… first run can be slow.'; try { const d=await postJson('/api/index',{url:$('indexUrl').value,limit:10,max_depth:2}); $('siteId').value=d.site_id; $('indexResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('indexResult').textContent='Error: '+e.message; } $('indexBtn').disabled=false; };
+$('chatBtn').onclick = async () => { $('chatBtn').disabled=true; $('answer').textContent='Thinking…'; try { const d=await postJson('/api/chat',{site_id:$('siteId').value,question:$('question').value}); $('answer').textContent=d.answer+'\n\nSources:\n'+d.sources.map(s=>`- ${s.title || 'Untitled'} (${s.url}) score=${s.score}`).join('\n'); } catch(e){ $('answer').textContent='Error: '+e.message; } $('chatBtn').disabled=false; };
+$('extractBtn').onclick = async () => { $('extractBtn').disabled=true; $('extractResult').textContent='Extracting JSON with local model…'; try { const d=await postJson('/api/extract',{url:$('extractUrl').value,instruction:$('instruction').value,limit:5,max_depth:1}); $('extractResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('extractResult').textContent='Error: '+e.message; } $('extractBtn').disabled=false; };
 checkHealth();
 </script>
 </body>
