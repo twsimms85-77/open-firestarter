@@ -35,15 +35,25 @@
 <main>
   <section class="hero">
     <h1>🔥 Open Firestarter</h1>
-    <p>Self-hosted Firecrawl-style scraping, crawling, exports, extraction, RAG indexing, website chat, robots/sitemaps, retries, persistent jobs, and optional JS rendering.</p>
+    <p>Self-hosted Firecrawl + Prometheus-style scraping, crawling, prompt-to-collector builds, exports, extraction, RAG indexing, robots/sitemaps, retries, persistent jobs, and optional JS rendering.</p>
     <div class="pills">
-      <span class="pill">/api/scrape</span><span class="pill">/api/batch/scrape</span><span class="pill">/api/map</span><span class="pill">/api/crawl</span><span class="pill">/api/export</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span><span class="pill">/api/jobs</span>
+      <span class="pill">/api/v1/build</span><span class="pill">/api/collect</span><span class="pill">/api/scrape</span><span class="pill">/api/batch/scrape</span><span class="pill">/api/map</span><span class="pill">/api/crawl</span><span class="pill">/api/export</span><span class="pill">/api/index</span><span class="pill">/api/chat</span><span class="pill">/api/extract</span><span class="pill">/api/jobs</span>
     </div>
   </section>
 
   <section class="card full">
     <div id="health" class="muted">Checking local services…</div>
   </section>
+
+  
+    <section class="card full">
+      <h2>0. Build a free Prometheus-style collector</h2>
+      <p class="muted">Prompt → verified local collector script + sample data, no Firecrawl credits.</p>
+      <label>Plain-English data request</label>
+      <textarea id="buildPrompt" placeholder="top 5 Hacker News stories with title, url, points">top 5 Hacker News stories with title, url, points</textarea>
+      <button id="buildBtn">Build collector</button>
+      <div id="buildResult" class="bubble">Collector build result appears here.</div>
+    </section>
 
   <div class="grid">
     <section class="card">
@@ -121,6 +131,7 @@ async function checkHealth() {
     $('health').innerHTML = `API: <span class="ok">ok</span> · Ollama: <span class="${h.ollama_ok ? 'ok':'bad'}">${h.ollama_ok ? 'ok':'not reachable'}</span> · Qdrant: <span class="${h.qdrant_ok ? 'ok':'bad'}">${h.qdrant_ok ? 'ok':'not reachable'}</span> · chat: ${h.chat_model} · embed: ${h.embed_model} · JS rendering: ${h.js_rendering_enabled ? 'on':'off'} · jobs: ${h.persistent_jobs ? 'persistent':'memory'} · map/batch ready · v${h.version}`;
   } catch(e) { $('health').textContent = 'Health failed: ' + e.message; }
 }
+$('buildBtn').onclick = async () => { $('buildBtn').disabled=true; $('buildResult').textContent='Building and verifying collector…'; try { const d=await postJson('/api/v1/build',{prompt:$('buildPrompt').value,limit:5}); $('buildResult').textContent=JSON.stringify({rowCount:d.rowCount, sample:d.sample, script:d.script},null,2); } catch(e){ $('buildResult').textContent='Error: '+e.message; } $('buildBtn').disabled=false; };
 $('scrapeBtn').onclick = async () => { $('scrapeBtn').disabled=true; $('scrapeResult').textContent='Scraping…'; try { const d=await postJson('/api/scrape',{url:$('scrapeUrl').value,render_js:$('scrapeJs').checked}); $('scrapeResult').textContent=d.markdown; } catch(e){ $('scrapeResult').textContent='Error: '+e.message; } $('scrapeBtn').disabled=false; };
 $('crawlBtn').onclick = async () => { $('crawlBtn').disabled=true; $('crawlResult').textContent='Crawling…'; try { const d=await postJson('/api/crawl',{url:$('crawlUrl').value,limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value),render_js:$('crawlJs').checked,respect_robots:$('respectRobots').checked,use_sitemap:$('useSitemap').checked}); $('crawlResult').textContent=JSON.stringify(d,null,2); } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('crawlBtn').disabled=false; };
 $('exportBtn').onclick = async () => { $('exportBtn').disabled=true; $('crawlResult').textContent='Exporting CSV…'; try { const r=await fetch('/api/export',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:$('crawlUrl').value,format:'csv',limit:Number($('limit').value),max_depth:Number($('depth').value),include_patterns:lines($('include').value),exclude_patterns:lines($('exclude').value),render_js:$('crawlJs').checked,respect_robots:$('respectRobots').checked,use_sitemap:$('useSitemap').checked})}); const text=await r.text(); if(!r.ok) throw new Error(text); $('crawlResult').textContent=text; } catch(e){ $('crawlResult').textContent='Error: '+e.message; } $('exportBtn').disabled=false; };

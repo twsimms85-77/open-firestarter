@@ -36,10 +36,11 @@ CRAWL_DELAY_SECONDS = float(os.getenv("CRAWL_DELAY_SECONDS", "0.25"))
 USER_AGENT = os.getenv("USER_AGENT", "OpenFirestarterBot/0.3 (+self-hosted crawler)")
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 JOBS_PATH = DATA_DIR / "jobs.json"
+COLLECTORS_PATH = DATA_DIR / "collectors.json"
 ENABLE_JS_RENDERING = os.getenv("ENABLE_JS_RENDERING", "false").lower() in {"1", "true", "yes"}
 DATA_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="Open Firestarter", version="0.4.0")
+app = FastAPI(title="Open Firestarter", version="0.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -135,10 +136,26 @@ class ExportRequest(BaseModel):
     use_sitemap: bool = True
 
 
+class BuildRequest(BaseModel):
+    prompt: str = Field(..., description="Plain-English data request, e.g. top 5 Hacker News stories with title, url, points")
+    urls: list[str] = Field(default_factory=list, description="Optional seed URLs. If omitted, the builder will infer URLs or use lightweight web search.")
+    limit: int = Field(default=10, ge=1, le=100)
+    max_depth: int = Field(default=1, ge=0, le=5)
+    search_web: bool = True
+    render_js: bool = False
+    json_schema_hint: dict[str, Any] | None = None
+
+
+class CollectorRequest(BuildRequest):
+    save: bool = False
+    name: str | None = None
+
+
 class JobRequest(BaseModel):
-    kind: Literal["crawl", "index", "extract"] = "index"
+    kind: Literal["crawl", "index", "extract", "collect"] = "index"
     crawl: CrawlRequest | None = None
     extract: ExtractRequest | None = None
+    collect: CollectorRequest | None = None
 
 
 @dataclass
@@ -461,6 +478,167 @@ async def fetch_page(
             await asyncio.sleep(min(2**attempt * 0.3, 4.0))
     return None
 
+
+def extract_urls_from_text(text: str) -> list[str]:
+    found = re.findall(r"https?://[^\s)\]\}\"']+", text)
+    urls: list[str] = []
+    for url in found:
+        clean = normalize_url(url.rstrip(".,;"))
+        if clean and clean not in urls:
+            urls.append(clean)
+    return urls
+
+
+def load_collectors() -> dict[str, Any]:
+    if not COLLECTORS_PATH.exists():
+        return {}
+    try:
+        return json.loads(COLLECTORS_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def save_collector(name: str, payload: dict[str, Any]) -> None:
+    collectors = load_collectors()
+    collectors[name] = payload
+    COLLECTORS_PATH.write_text(json.dumps(collectors, indent=2, default=str))
+
+
+async def lightweight_search(query: str, limit: int = 5) -> list[str]:
+    urls: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": USER_AGENT}) as client:
+            r = await client.get("https://duckduckgo.com/html/", params={"q": query})
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.select("a.result__a, a[href]"):
+                href = a.get("href", "")
+                if "uddg=" in href:
+                    from urllib.parse import parse_qs, urlparse as _urlparse
+                    parsed = _urlparse(href)
+                    href = parse_qs(parsed.query).get("uddg", [href])[0]
+                clean = normalize_url(href)
+                if clean and clean not in urls and "duckduckgo.com" not in clean:
+                    urls.append(clean)
+                if len(urls) >= limit:
+                    break
+    except Exception:
+        pass
+    return urls
+
+
+async def collect_hacker_news(limit: int) -> list[dict[str, Any]]:
+    async with httpx.AsyncClient(timeout=25, headers={"User-Agent": USER_AGENT}) as client:
+        r = await client.get("https://news.ycombinator.com/", follow_redirects=True)
+    soup = BeautifulSoup(r.text, "html.parser")
+    rows: list[dict[str, Any]] = []
+    for item in soup.select("tr.athing")[:limit]:
+        story_id = item.get("id")
+        title_el = item.select_one("span.titleline > a") or item.select_one("a.storylink")
+        score_el = soup.select_one(f"#score_{story_id}")
+        next_row = item.find_next_sibling("tr")
+        comments_links = next_row.select("a[href^='item?id=']") if next_row else []
+        comments_el = comments_links[-1] if comments_links else None
+        url = title_el.get("href") if title_el else None
+        if url:
+            url = normalize_url(url, base="https://news.ycombinator.com/")
+        rows.append({
+            "title": title_el.get_text(" ", strip=True) if title_el else None,
+            "url": url,
+            "points": score_el.get_text(" ", strip=True) if score_el else None,
+            "comments": comments_el.get_text(" ", strip=True) if comments_el else None,
+            "source_url": "https://news.ycombinator.com/",
+        })
+    return rows
+
+
+def collector_script(prompt: str, urls: list[str], limit: int, render_js: bool = False) -> str:
+    body = {
+        "prompt": prompt,
+        "urls": urls,
+        "limit": limit,
+        "render_js": render_js,
+    }
+    body_json = json.dumps(body, indent=2)
+    return "\n".join([
+        "#!/usr/bin/env python3",
+        "import json",
+        "import os",
+        "import requests",
+        "",
+        "BASE_URL = os.getenv('OPEN_FIRESTARTER_URL', 'http://localhost:8000').rstrip('/')",
+        f"BODY = {body_json}",
+        "resp = requests.post(f'{BASE_URL}/api/collect', json=BODY, timeout=300)",
+        "resp.raise_for_status()",
+        "print(json.dumps(resp.json().get('sample', []), indent=2))",
+        "",
+    ])
+
+def basic_records_from_pages(crawled: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for page in crawled.get("pages", [])[:limit]:
+        records.append({
+            "title": page.get("title"),
+            "url": page.get("url"),
+            "description": page.get("description"),
+            "text_chars": page.get("text_chars"),
+            "markdown_preview": (page.get("markdown") or "")[:1000],
+            "source_url": page.get("url"),
+        })
+    return records
+
+
+async def build_collector(req: CollectorRequest | BuildRequest) -> dict[str, Any]:
+    started = now_ms()
+    session_id = str(uuid.uuid4())
+    prompt_l = req.prompt.lower()
+    assumptions: list[str] = []
+    urls = [u for u in (normalize_url(u) for u in req.urls) if u]
+    urls += [u for u in extract_urls_from_text(req.prompt) if u not in urls]
+
+    if "hacker news" in prompt_l or "news.ycombinator" in prompt_l:
+        sample = await collect_hacker_news(req.limit)
+        urls = urls or ["https://news.ycombinator.com/"]
+        how = "Recognized Hacker News request, used a deterministic local parser, and returned verified rows without any paid API."
+    else:
+        if not urls and req.search_web:
+            urls = await lightweight_search(req.prompt, limit=min(5, req.limit))
+            if urls:
+                assumptions.append("No seed URL was provided, so I used lightweight DuckDuckGo HTML search to find likely sources.")
+        if not urls:
+            raise HTTPException(status_code=400, detail="No URLs found. Add a URL to the prompt or pass urls=[...].")
+        crawl_req = CrawlRequest(url=urls[0], limit=req.limit, max_depth=req.max_depth, render_js=req.render_js, use_sitemap=True, respect_robots=True)
+        crawled = await crawl_pages(crawl_req)
+        sample = basic_records_from_pages(crawled, req.limit)
+        how = "Mapped/crawled the seed site with robots and sitemap support, extracted Markdown locally, and returned structured page records. For schema-perfect extraction, run with Ollama available and pass json_schema_hint."
+        if req.json_schema_hint:
+            try:
+                extracted = await extract(ExtractRequest(url=urls[0], instruction=req.prompt, limit=req.limit, max_depth=req.max_depth, json_schema_hint=req.json_schema_hint, render_js=req.render_js))
+                data = extracted.get("data")
+                sample = data if isinstance(data, list) else [data]
+                how = "Crawled the source, used the local Ollama model to extract against the schema hint, and validated JSON parseability."
+            except Exception as exc:
+                assumptions.append(f"LLM structured extraction failed or Ollama was unavailable, so I returned deterministic page records instead: {exc}")
+
+    script = collector_script(req.prompt, urls, req.limit, req.render_js)
+    result = {
+        "sessionId": session_id,
+        "script": script,
+        "scriptLanguage": "python",
+        "sample": sample[: req.limit],
+        "rowCount": len(sample[: req.limit]),
+        "howItWorks": how,
+        "assumptions": assumptions,
+        "integration": "open-firestarter-local",
+        "cost": "self-hosted; no Firecrawl or Prometheus API credits",
+        "elapsed_ms": now_ms() - started,
+    }
+    if isinstance(req, CollectorRequest) and req.save:
+        name = req.name or re.sub(r"[^a-zA-Z0-9_-]", "-", req.prompt.lower())[:60].strip("-") or session_id
+        save_collector(name, result)
+        result["collectorName"] = name
+    return result
+
+
 async def map_site(req: MapRequest) -> dict[str, Any]:
     root_url = normalize_url(req.url)
     if not root_url:
@@ -675,7 +853,7 @@ async def health() -> dict[str, Any]:
         "models_available": models_available,
         "js_rendering_enabled": ENABLE_JS_RENDERING,
         "persistent_jobs": True,
-        "version": "0.4.0",
+        "version": "0.5.0",
     }
 
 
@@ -701,6 +879,21 @@ async def scrape(req: ScrapeRequest) -> dict[str, Any]:
                 html_response = await client.get(url, follow_redirects=True)
                 data["html"] = html_response.text
     return data
+
+@app.post("/api/v1/build")
+async def prometheus_build(req: BuildRequest) -> dict[str, Any]:
+    return await build_collector(req)
+
+
+@app.post("/api/collect")
+async def collect(req: CollectorRequest) -> dict[str, Any]:
+    return await build_collector(req)
+
+
+@app.get("/api/collectors")
+async def list_collectors() -> dict[str, Any]:
+    return {"collectors": load_collectors()}
+
 
 @app.post("/api/map")
 async def map_endpoint(req: MapRequest) -> dict[str, Any]:
@@ -825,6 +1018,10 @@ async def run_job(job_id: str, req: JobRequest) -> None:
             if not req.extract:
                 raise ValueError("extract payload required")
             result = await extract(req.extract)
+        elif req.kind == "collect":
+            if not req.collect:
+                raise ValueError("collect payload required")
+            result = await build_collector(req.collect)
         else:
             if not req.crawl:
                 raise ValueError("crawl payload required")

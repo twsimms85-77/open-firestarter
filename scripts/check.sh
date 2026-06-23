@@ -35,3 +35,15 @@ curl -fsS -X POST "$BASE_URL/api/export" \
   -d '{"url":"https://example.com","format":"csv","limit":1,"max_depth":0}' \
   -o /tmp/open-firestarter-export.csv
 head -3 /tmp/open-firestarter-export.csv
+
+
+printf "\nChecking Prometheus build endpoint...\n"
+curl -fsS -X POST "$BASE_URL/api/v1/build" \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"top 3 Hacker News stories with title, url, points","limit":3}' \
+  -o /tmp/open-firestarter-build.json
+python - <<'PY'
+import json
+payload=json.load(open('/tmp/open-firestarter-build.json'))
+print({"rowCount": payload.get("rowCount"), "scriptLanguage": payload.get("scriptLanguage"), "cost": payload.get("cost")})
+PY

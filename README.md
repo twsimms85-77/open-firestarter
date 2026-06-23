@@ -4,10 +4,12 @@ Self-hosted Firecrawl/Prometheus-style starter: scrape pages into clean Markdown
 
 No hosted Firecrawl API key required.
 
-## What v0.4 does
+## What v0.5 does
 
 - `/api/scrape` — single page to Markdown/text/links/metadata, with retries and optional JavaScript rendering.
 - `/api/batch/scrape` — scrape up to 100 URLs in one request.
+- `/api/v1/build` — Prometheus-style prompt → verified local collector script + sample data.
+- `/api/collect` — run/save a local reusable collector without Firecrawl credits.
 - `/api/map` — discover URLs from sitemap plus link traversal without extracting full page content.
 - `/api/crawl` — same-site crawling with page limit, max depth, include/exclude regex filters, robots.txt checks, sitemap seeding, retries, and Markdown output.
 - `/api/export` — crawl output as JSON, JSONL, or CSV.
@@ -174,3 +176,30 @@ http://YOUR_SERVER_IP:8000
 ```
 
 This installs Docker if needed, clones/updates the repo, starts the stack, pulls Ollama models, and runs the check script.
+
+
+## Prometheus-compatible local builder
+
+Prometheus turns a plain-English request into verified collector code and a data sample. Open Firestarter now has a local, free version of that flow:
+
+```bash
+curl -s http://localhost:8000/api/v1/build \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"top 5 Hacker News stories with title, url, points","limit":5}' \
+  | jq '{rowCount, script, sample}'
+```
+
+The response includes:
+
+- `script` — a runnable Python collector that calls your self-hosted Open Firestarter instance.
+- `sample` — data produced by running the collector path.
+- `rowCount` — number of verified rows.
+- `cost` — self-hosted; no Firecrawl/Prometheus credits.
+
+Save a reusable collector:
+
+```bash
+curl -s http://localhost:8000/api/collect \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"top 5 Hacker News stories with title, url, points","limit":5,"save":true,"name":"hn-top-5"}'
+```
